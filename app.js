@@ -10,6 +10,7 @@ let state = {
     currentTab: 'dashboard',
     orders: [],
     bulkOrders: [],
+    pageTraffic: [],
     selectedOrder: null,
     timeRange: 'All Time',
     isDark: true,
@@ -131,6 +132,29 @@ async function fetchBulkOrders() {
     }
 }
 
+async function fetchPageTraffic() {
+    try {
+        const res = await fetch(`${API_BASE}/api/page-traffic`);
+        const data = await res.json();
+        if (data.success) {
+            state.pageTraffic = data.traffic || [];
+        }
+    } catch (err) {
+        console.error('Failed to fetch page traffic:', err);
+    }
+}
+
+async function resetPageTraffic() {
+    if (!confirm('Are you sure you want to reset all page traffic data?')) return;
+    try {
+        await fetch(`${API_BASE}/api/reset-traffic`, { method: 'POST' });
+        state.pageTraffic = [];
+        if (state.currentTab === 'dashboard') renderDashboard();
+    } catch (err) {
+        console.error('Failed to reset traffic:', err);
+    }
+}
+
 async function updateOrderStatus(id, status) {
     try {
         await fetch(`${API_BASE}/api/update-order-status`, {
@@ -158,14 +182,17 @@ async function deleteOrder(id) {
 function startPolling() {
     fetchOrders().then(() => {
         fetchBulkOrders();
-        if (state.currentTab === 'dashboard') renderDashboard();
-        else if (state.currentTab === 'orders') renderOrders();
-        else if (state.currentTab === 'bulk') renderBulk();
+        fetchPageTraffic().then(() => {
+            if (state.currentTab === 'dashboard') renderDashboard();
+            else if (state.currentTab === 'orders') renderOrders();
+            else if (state.currentTab === 'bulk') renderBulk();
+        });
     });
     
     state.pollTimer = setInterval(async () => {
         await fetchOrders();
         await fetchBulkOrders();
+        await fetchPageTraffic();
         if (state.currentTab === 'dashboard') renderDashboard();
         else if (state.currentTab === 'orders') renderOrders();
         else if (state.currentTab === 'bulk') renderBulk();
@@ -399,14 +426,9 @@ function renderDashboardCharts() {
         });
     }
 
-    // Page traffic chart (placeholder data — later can integrate Clarity API)
-    const trafficData = [
-        { page: 'Home', visits: 1247 },
-        { page: 'Pillows', visits: 893 },
-        { page: 'Cushions', visits: 641 },
-        { page: 'Product', visits: 512 },
-        { page: 'About', visits: 284 },
-        { page: 'Checkout', visits: 156 }
+    // Page traffic chart using real data
+    const trafficData = state.pageTraffic.length ? state.pageTraffic : [
+        { page: 'No data', visits: 0 }
     ];
 
     const trafficCtx = document.getElementById('traffic-chart');
@@ -727,7 +749,19 @@ function renderSettings() {
                 </div>
             </div>
         </div>
+
+        <div class="settings-card">
+            <div class="settings-card-left">
+                <div class="settings-icon" style="color: var(--danger); background: rgba(239, 83, 80, 0.1);">${ICONS.trash}</div>
+                <div>
+                    <div class="settings-label">Reset Traffic Data</div>
+                    <div class="settings-desc">Permanently clear all page views</div>
+                </div>
+            </div>
+            <button class="action-btn delete" style="padding: 0.5rem 1rem; border:none; border-radius:6px; background:var(--danger); color:white; font-weight:600; font-family:var(--font);" onclick="resetPageTraffic()">Reset</button>
+        </div>
     `;
+
 }
 
 // ── Utility ──
