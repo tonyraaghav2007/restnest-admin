@@ -5,11 +5,18 @@
 const API_BASE = 'https://restienestie.onrender.com';
 const POLL_INTERVAL = 10000; // 10 seconds
 
+const SUPABASE_URL = 'https://julktcdhbnvxsjuqsimp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1bGt0Y2RoYm52eHNqdXFzaW1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MjUxOTAsImV4cCI6MjEwMjMwMTE5MH0.W6Jov4LGiSRnyOyG9h4xwYLHc6kZawR63EmyQd52Goo';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let adminSession = null;
+
+
 // ── State ──
 let state = {
     currentTab: 'dashboard',
     orders: [],
     bulkOrders: [],
+    customers: [],
     pageTraffic: [],
     selectedOrder: null,
     timeRange: 'All Time',
@@ -24,6 +31,7 @@ let state = {
 const ICONS = {
     dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`,
     orders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+    customers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
     bulk: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
     settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
     refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
@@ -46,8 +54,23 @@ const ICONS = {
 const CHART_COLORS = ['#00E5FF', '#FF6B6B', '#FFC107', '#4CAF50', '#AB47BC', '#42A5F5', '#FF7043', '#26A69A'];
 
 // ── Init ──
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     loadTheme();
+    
+    if (localStorage.getItem('admin_logged_in') === 'true') {
+        initAdminApp();
+    } else {
+        renderLogin();
+    }
+});
+
+window.handleAdminLogout = function() {
+    localStorage.removeItem('admin_logged_in');
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    renderLogin();
+}
+
+function initAdminApp() {
     renderShell();
     navigate('dashboard');
     startPolling();
@@ -61,7 +84,50 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.status-dropdown-menu.open').forEach(m => m.classList.remove('open'));
         }
     });
-});
+}
+
+function renderLogin() {
+    document.getElementById('app').innerHTML = `
+        <div class="login-wrapper">
+            <div class="login-box">
+                <h1 style="text-align: center; margin-bottom: 20px;">Admin Login</h1>
+                <p id="login-error" style="color: red; text-align: center; margin-bottom: 10px;"></p>
+                <div style="margin-bottom: 10px;">
+                    <label>Username</label>
+                    <input type="text" id="admin-username" style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; background: var(--bg-main); color: var(--text-main);">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label>Password</label>
+                    <input type="password" id="admin-password" style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; background: var(--bg-main); color: var(--text-main);">
+                </div>
+                <button onclick="handleAdminLogin()" style="width: 100%; padding: 10px; background: #0077CC; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Login</button>
+            </div>
+        </div>
+    `;
+    
+    const style = document.createElement('style');
+    style.innerHTML = `
+        .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: var(--bg-main); }
+        .login-box { background: var(--bg-card); padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        .login-box label { display: block; margin-bottom: 5px; color: var(--text-main); font-weight: 500; }
+    `;
+    document.head.appendChild(style);
+}
+
+window.handleAdminLogin = async function() {
+    const username = document.getElementById('admin-username').value;
+    const password = document.getElementById('admin-password').value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.textContent = 'Logging in...';
+    
+    if (username === 'Admin' && password === 'chirag.restnest.1313') {
+        errorEl.textContent = 'Success!';
+        localStorage.setItem('admin_logged_in', 'true');
+        initAdminApp();
+    } else {
+        errorEl.textContent = 'Invalid username or password.';
+    }
+}
 
 // ── Theme ──
 function loadTheme() {
@@ -101,6 +167,7 @@ function navigate(tab) {
     switch (tab) {
         case 'dashboard': renderDashboard(); break;
         case 'orders': renderOrders(); break;
+        case 'customers': renderCustomers(); break;
         case 'bulk': renderBulk(); break;
         case 'settings': renderSettings(); break;
     }
@@ -118,6 +185,18 @@ async function fetchOrders() {
         console.error('Failed to fetch orders:', err);
     }
     state.isLoading = false;
+}
+
+async function fetchCustomers() {
+    try {
+        const res = await fetch(`${API_BASE}/api/customers`);
+        const data = await res.json();
+        if (data.success) {
+            state.customers = data.customers || [];
+        }
+    } catch (err) {
+        console.error('Failed to fetch customers:', err);
+    }
 }
 
 async function fetchBulkOrders() {
@@ -182,9 +261,11 @@ async function deleteOrder(id) {
 function startPolling() {
     fetchOrders().then(() => {
         fetchBulkOrders();
+        fetchCustomers();
         fetchPageTraffic().then(() => {
             if (state.currentTab === 'dashboard') renderDashboard();
             else if (state.currentTab === 'orders') renderOrders();
+            else if (state.currentTab === 'customers') renderCustomers();
             else if (state.currentTab === 'bulk') renderBulk();
         });
     });
@@ -192,9 +273,11 @@ function startPolling() {
     state.pollTimer = setInterval(async () => {
         await fetchOrders();
         await fetchBulkOrders();
+        await fetchCustomers();
         await fetchPageTraffic();
         if (state.currentTab === 'dashboard') renderDashboard();
         else if (state.currentTab === 'orders') renderOrders();
+        else if (state.currentTab === 'customers') renderCustomers();
         else if (state.currentTab === 'bulk') renderBulk();
     }, POLL_INTERVAL);
 }
@@ -216,6 +299,10 @@ function renderShell() {
                     <button class="nav-item" data-tab="orders" onclick="navigate('orders')">
                         <span class="nav-icon">${ICONS.orders}</span>
                         Orders
+                    </button>
+                    <button class="nav-item" data-tab="customers" onclick="navigate('customers')">
+                        <span class="nav-icon">${ICONS.customers}</span>
+                        Customers
                     </button>
                     <button class="nav-item" data-tab="bulk" onclick="navigate('bulk')">
                         <span class="nav-icon">${ICONS.bulk}</span>
@@ -243,6 +330,10 @@ function renderShell() {
                 <button class="mobile-nav-item" data-tab="orders" onclick="navigate('orders')">
                     ${ICONS.orders}
                     <span>Orders</span>
+                </button>
+                <button class="mobile-nav-item" data-tab="customers" onclick="navigate('customers')">
+                    ${ICONS.customers}
+                    <span>Customers</span>
                 </button>
                 <button class="mobile-nav-item" data-tab="bulk" onclick="navigate('bulk')">
                     ${ICONS.bulk}
@@ -511,6 +602,7 @@ function renderOrders() {
                     <tr>
                         <th>ID</th>
                         <th>Customer</th>
+                        <th>User Type</th>
                         <th>Total</th>
                         <th>Status</th>
                     </tr>
@@ -520,6 +612,7 @@ function renderOrders() {
                         <tr onclick="openOrderDetail('${order.id}')">
                             <td class="order-id">#${(order.id || '').slice(-6)}</td>
                             <td>${escapeHtml(order.customer_name || '')}</td>
+                            <td>${order.user_id ? '<span style="background:var(--success);color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Registered</span>' : '<span style="background:#aaa;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Guest</span>'}</td>
                             <td class="order-amount">${formatCurrency(order.total_amount)}</td>
                             <td>
                                 <div class="status-dropdown" onclick="event.stopPropagation()">
@@ -677,6 +770,102 @@ async function handleDetailDelete(id) {
     }
 }
 
+// ══════════════════════ CUSTOMERS ══════════════════════
+function renderCustomers() {
+    const content = document.getElementById('main-content');
+
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>Customers</h2>
+            <div class="page-header-actions">
+                <button class="btn-icon" onclick="fetchCustomers().then(()=>renderCustomers())" title="Refresh">
+                    ${ICONS.refresh}
+                </button>
+            </div>
+        </div>
+
+        ${state.customers.length ? `
+        <div class="orders-table-wrapper">
+            <table class="orders-table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Addresses</th>
+                        <th>Joined</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${state.customers.map(c => `
+                        <tr>
+                            <td class="order-id" style="font-size: 0.8rem;">${(c.user_id || '').substring(0,8)}...</td>
+                            <td>${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</td>
+                            <td>${escapeHtml(c.phone || 'N/A')}</td>
+                            <td>${c.addresses && c.addresses.length ? c.addresses.length : 0} saved</td>
+                            <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : `
+        <div class="empty-state">
+            ${ICONS.customers}
+            <p>No registered customers yet</p>
+        </div>
+        `}
+    `;
+}
+
+// ══════════════════════ CUSTOMERS ══════════════════════
+function renderCustomers() {
+    const content = document.getElementById('main-content');
+
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>Customers</h2>
+            <div class="page-header-actions">
+                <button class="btn-icon" onclick="fetchCustomers().then(()=>renderCustomers())" title="Refresh">
+                    ${ICONS.refresh}
+                </button>
+            </div>
+        </div>
+
+        ${state.customers.length ? `
+        <div class="orders-table-wrapper">
+            <table class="orders-table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Addresses</th>
+                        <th>Joined</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${state.customers.map(c => `
+                        <tr>
+                            <td class="order-id" style="font-size: 0.8rem;">${(c.user_id || '').substring(0,8)}...</td>
+                            <td>${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</td>
+                            <td>${escapeHtml(c.phone || 'N/A')}</td>
+                            <td>${c.addresses && c.addresses.length ? c.addresses.length : 0} saved</td>
+                            <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : `
+        <div class="empty-state">
+            ${ICONS.customers}
+            <p>No registered customers yet</p>
+        </div>
+        `}
+    `;
+}
+
 // ══════════════════════ BULK ORDERS ══════════════════════
 function renderBulk() {
     const content = document.getElementById('main-content');
@@ -754,11 +943,11 @@ function renderSettings() {
             <div class="settings-card-left">
                 <div class="settings-icon" style="color: var(--danger); background: rgba(239, 83, 80, 0.1);">${ICONS.trash}</div>
                 <div>
-                    <div class="settings-label">Reset Traffic Data</div>
-                    <div class="settings-desc">Permanently clear all page views</div>
+                    <div class="settings-label">Logout</div>
+                    <div class="settings-desc">Sign out of the admin panel</div>
                 </div>
             </div>
-            <button class="action-btn delete" style="padding: 0.5rem 1rem; border:none; border-radius:6px; background:var(--danger); color:white; font-weight:600; font-family:var(--font);" onclick="resetPageTraffic()">Reset</button>
+            <button class="action-btn delete" style="padding: 0.5rem 1rem; border:none; border-radius:6px; background:var(--danger); color:white; font-weight:600; font-family:var(--font);" onclick="handleAdminLogout()">Logout</button>
         </div>
     `;
 
