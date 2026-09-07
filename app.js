@@ -16,6 +16,7 @@ let state = {
     currentTab: 'dashboard',
     orders: [],
     bulkOrders: [],
+    contactMessages: [],
     customers: [],
     pageTraffic: [],
     selectedOrder: null,
@@ -33,6 +34,7 @@ const ICONS = {
     orders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
     customers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
     bulk: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+    contact: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`,
     settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
     refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
     close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
@@ -169,6 +171,7 @@ function navigate(tab) {
         case 'orders': renderOrders(); break;
         case 'customers': renderCustomers(); break;
         case 'bulk': renderBulk(); break;
+        case 'contact': renderContactMessages(); break;
         case 'settings': renderSettings(); break;
     }
 }
@@ -208,6 +211,18 @@ async function fetchBulkOrders() {
         }
     } catch (err) {
         console.error('Failed to fetch bulk orders:', err);
+    }
+}
+
+async function fetchContactMessages() {
+    try {
+        const res = await fetch(`${API_BASE}/api/contact`);
+        const data = await res.json();
+        if (data.success) {
+            state.contactMessages = data.contacts || [];
+        }
+    } catch (err) {
+        console.error('Failed to fetch contact messages:', err);
     }
 }
 
@@ -261,24 +276,28 @@ async function deleteOrder(id) {
 function startPolling() {
     fetchOrders().then(() => {
         fetchBulkOrders();
+        fetchContactMessages();
         fetchCustomers();
         fetchPageTraffic().then(() => {
             if (state.currentTab === 'dashboard') renderDashboard();
             else if (state.currentTab === 'orders') renderOrders();
             else if (state.currentTab === 'customers') renderCustomers();
             else if (state.currentTab === 'bulk') renderBulk();
+            else if (state.currentTab === 'contact') renderContactMessages();
         });
     });
     
     state.pollTimer = setInterval(async () => {
         await fetchOrders();
         await fetchBulkOrders();
+        await fetchContactMessages();
         await fetchCustomers();
         await fetchPageTraffic();
         if (state.currentTab === 'dashboard') renderDashboard();
         else if (state.currentTab === 'orders') renderOrders();
         else if (state.currentTab === 'customers') renderCustomers();
         else if (state.currentTab === 'bulk') renderBulk();
+        else if (state.currentTab === 'contact') renderContactMessages();
     }, POLL_INTERVAL);
 }
 
@@ -307,6 +326,10 @@ function renderShell() {
                     <button class="nav-item" data-tab="bulk" onclick="navigate('bulk')">
                         <span class="nav-icon">${ICONS.bulk}</span>
                         Bulk Requests
+                    </button>
+                    <button class="nav-item" data-tab="contact" onclick="navigate('contact')">
+                        <span class="nav-icon">${ICONS.contact}</span>
+                        Contacts
                     </button>
                     <button class="nav-item" data-tab="settings" onclick="navigate('settings')">
                         <span class="nav-icon">${ICONS.settings}</span>
@@ -338,6 +361,10 @@ function renderShell() {
                 <button class="mobile-nav-item" data-tab="bulk" onclick="navigate('bulk')">
                     ${ICONS.bulk}
                     <span>Bulk</span>
+                </button>
+                <button class="mobile-nav-item" data-tab="contact" onclick="navigate('contact')">
+                    ${ICONS.contact}
+                    <span>Contacts</span>
                 </button>
                 <button class="mobile-nav-item" data-tab="settings" onclick="navigate('settings')">
                     ${ICONS.settings}
@@ -902,6 +929,47 @@ function renderBulk() {
         <div class="empty-state">
             ${ICONS.bulk}
             <p>No bulk requests yet</p>
+        </div>
+        `}
+    `;
+}
+
+// ══════════════════════ CONTACT MESSAGES ══════════════════════
+function renderContactMessages() {
+    const content = document.getElementById('main-content');
+
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>Contact Messages</h2>
+            <div class="page-header-actions">
+                <button class="btn-icon" onclick="fetchContactMessages().then(()=>renderContactMessages())" title="Refresh">
+                    ${ICONS.refresh}
+                </button>
+            </div>
+        </div>
+
+        ${state.contactMessages.length ? `
+        <div class="bulk-grid">
+            ${state.contactMessages.map(msg => `
+                <div class="bulk-card">
+                    <div class="bulk-card-header">
+                        <span class="bulk-card-id">${escapeHtml(msg.id || '')}</span>
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);">${new Date(msg.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="bulk-card-business">${escapeHtml(msg.company || 'No Company')}</div>
+                    <div style="margin-top: 0.5rem; color: var(--text-main); font-size: 0.95rem; white-space: pre-wrap;">${escapeHtml(msg.message || '')}</div>
+                    <div class="bulk-card-contact" style="margin-top: 1rem;">
+                        <span>👤 ${escapeHtml(msg.name || '')}</span>
+                        <span>📧 ${escapeHtml(msg.email || '')}</span>
+                        <span>📞 ${escapeHtml(msg.phone || '')}</span>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        ` : `
+        <div class="empty-state">
+            ${ICONS.contact}
+            <p>No contact messages yet</p>
         </div>
         `}
     `;
