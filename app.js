@@ -19,6 +19,7 @@ let state = {
     contactMessages: [],
     customers: [],
     pageTraffic: [],
+    reviews: [],
     selectedOrder: null,
     timeRange: 'All Time',
     isDark: true,
@@ -49,7 +50,8 @@ const ICONS = {
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
     info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
     moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
-    dropDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`
+    dropDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+    star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
 };
 
 // ── Chart Colors ──
@@ -172,6 +174,7 @@ function navigate(tab) {
         case 'customers': renderCustomers(); break;
         case 'bulk': renderBulk(); break;
         case 'contact': renderContactMessages(); break;
+        case 'reviews': renderReviews(); break;
         case 'settings': renderSettings(); break;
     }
 }
@@ -223,6 +226,18 @@ async function fetchContactMessages() {
         }
     } catch (err) {
         console.error('Failed to fetch contact messages:', err);
+    }
+}
+
+async function fetchReviews() {
+    try {
+        const res = await fetch(`${API_BASE}/api/reviews`);
+        const data = await res.json();
+        if (data.success) {
+            state.reviews = data.reviews || [];
+        }
+    } catch (err) {
+        console.error('Failed to fetch reviews:', err);
     }
 }
 
@@ -278,12 +293,14 @@ function startPolling() {
         fetchBulkOrders();
         fetchContactMessages();
         fetchCustomers();
+        fetchReviews();
         fetchPageTraffic().then(() => {
             if (state.currentTab === 'dashboard') renderDashboard();
             else if (state.currentTab === 'orders') renderOrders();
             else if (state.currentTab === 'customers') renderCustomers();
             else if (state.currentTab === 'bulk') renderBulk();
             else if (state.currentTab === 'contact') renderContactMessages();
+            else if (state.currentTab === 'reviews') renderReviews();
         });
     });
     
@@ -292,12 +309,14 @@ function startPolling() {
         await fetchBulkOrders();
         await fetchContactMessages();
         await fetchCustomers();
+        await fetchReviews();
         await fetchPageTraffic();
         if (state.currentTab === 'dashboard') renderDashboard();
         else if (state.currentTab === 'orders') renderOrders();
         else if (state.currentTab === 'customers') renderCustomers();
         else if (state.currentTab === 'bulk') renderBulk();
         else if (state.currentTab === 'contact') renderContactMessages();
+        else if (state.currentTab === 'reviews') renderReviews();
     }, POLL_INTERVAL);
 }
 
@@ -330,6 +349,10 @@ function renderShell() {
                     <button class="nav-item" data-tab="contact" onclick="navigate('contact')">
                         <span class="nav-icon">${ICONS.contact}</span>
                         Contacts
+                    </button>
+                    <button class="nav-item" data-tab="reviews" onclick="navigate('reviews')">
+                        <span class="nav-icon">${ICONS.star}</span>
+                        Reviews
                     </button>
                     <button class="nav-item" data-tab="settings" onclick="navigate('settings')">
                         <span class="nav-icon">${ICONS.settings}</span>
@@ -365,6 +388,10 @@ function renderShell() {
                 <button class="mobile-nav-item" data-tab="contact" onclick="navigate('contact')">
                     ${ICONS.contact}
                     <span>Contacts</span>
+                </button>
+                <button class="mobile-nav-item" data-tab="reviews" onclick="navigate('reviews')">
+                    ${ICONS.star}
+                    <span>Reviews</span>
                 </button>
                 <button class="mobile-nav-item" data-tab="settings" onclick="navigate('settings')">
                     ${ICONS.settings}
@@ -970,6 +997,46 @@ function renderContactMessages() {
         <div class="empty-state">
             ${ICONS.contact}
             <p>No contact messages yet</p>
+        </div>
+        `}
+    `;
+}
+
+// ══════════════════════ REVIEWS ══════════════════════
+function renderReviews() {
+    const content = document.getElementById('main-content');
+
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>Product Reviews</h2>
+            <div class="page-header-actions">
+                <button class="btn-icon" onclick="fetchReviews().then(()=>renderReviews())" title="Refresh">
+                    ${ICONS.refresh}
+                </button>
+            </div>
+        </div>
+
+        ${state.reviews.length ? `
+        <div class="bulk-grid">
+            ${state.reviews.map(r => `
+                <div class="bulk-card">
+                    <div class="bulk-card-header">
+                        <span class="bulk-card-id">${escapeHtml(r.product_id || 'Unknown')}</span>
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);">${new Date(r.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="bulk-card-business">${escapeHtml(r.reviewer_name || 'Anonymous')}</div>
+                    <div style="color: #FFC107; font-size: 1.2rem; margin-top: 0.5rem;">${'★'.repeat(r.rating || 5)}${'☆'.repeat(5 - (r.rating || 5))}</div>
+                    <div style="margin-top: 0.5rem; color: var(--text-main); font-size: 0.95rem; white-space: pre-wrap;">"${escapeHtml(r.review_text || '')}"</div>
+                    <div style="margin-top: 1rem; font-size: 0.8rem; color: ${r.status === 'Approved' ? 'var(--success)' : 'var(--warning)'}; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+                        Status: ${r.status || 'Approved'}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        ` : `
+        <div class="empty-state">
+            ${ICONS.star}
+            <p>No reviews yet</p>
         </div>
         `}
     `;
