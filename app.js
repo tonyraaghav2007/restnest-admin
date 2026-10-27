@@ -685,7 +685,10 @@ function renderOrders() {
     content.innerHTML = `
         <div class="page-header">
             <h2>Live Orders</h2>
-            <div class="page-header-actions">
+            <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;">
+                <button class="action-btn" style="background:#2563eb;color:#fff;font-size:0.8rem;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;" onclick="handlePushAllToBigship(event)" title="Push all unbooked orders to BigShip Direct">
+                    ${ICONS.truck} Push All to BigShip
+                </button>
                 <button class="btn-icon" onclick="fetchOrders().then(()=>renderOrders())" title="Refresh">
                     ${ICONS.refresh}
                 </button>
@@ -778,7 +781,8 @@ window.handleRetryBigship = async function(orderId) {
         });
         const data = await res.json();
         if (data.success) {
-            alert('Success! Order synced with BigShip.\n\nAWB: ' + (data.data?.awb_code || 'Generated') + '\nShipment ID: ' + (data.data?.shipment_id || 'Assigned'));
+            const shipmentId = data.shipment_id || data.data?.CustomGlobalOrderId || data.data?.shipment_id || 'Booked';
+            alert('Success! Order booked on BigShip Direct.\n\nShipment ID: ' + shipmentId + '\nStatus: Visible on BigShip Dashboard');
             await fetchOrders();
             openOrderDetail(orderId);
         } else {
@@ -790,6 +794,36 @@ window.handleRetryBigship = async function(orderId) {
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = `${ICONS.truck} Push to BigShip`;
+        }
+    }
+};
+
+window.handlePushAllToBigship = async function(e) {
+    if (!confirm('Sync all pending / unbooked orders to BigShip Direct now?')) return;
+    const btn = e ? e.currentTarget : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="btn-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span> Syncing...`;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/push-all-unbooked-to-bigship`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`BigShip Sync Complete!\n\nSuccessfully Booked: ${data.results.successCount}\nFailed: ${data.results.failureCount}\nTotal Checked: ${data.results.total}`);
+            await fetchOrders();
+            renderOrders();
+        } else {
+            alert('Bulk sync failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error syncing to BigShip: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `${ICONS.truck} Push All to BigShip`;
         }
     }
 };
