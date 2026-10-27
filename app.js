@@ -22,6 +22,7 @@ let state = {
     reviews: [],
     selectedOrder: null,
     timeRange: 'All Time',
+    orderPaymentFilter: 'all',
     isDark: true,
     isLoading: true,
     salesChart: null,
@@ -428,11 +429,25 @@ function statusClass(s) {
     return (s || '').toLowerCase();
 }
 
+function isCodOrder(order) {
+    if (!order) return false;
+    const method = String(order.payment_method || order.paymentMethod || '').toLowerCase();
+    const pid = String(order.payment_id || order.paymentId || '').toUpperCase();
+    const codFee = Number(order.cod_fee || 0);
+    return method.includes('cod') || method.includes('cash on delivery') || pid.startsWith('COD') || codFee > 0;
+}
+
 // ══════════════════════ DASHBOARD ══════════════════════
 function renderDashboard() {
     const filtered = getFilteredOrders();
     const totalSales = filtered.reduce((sum, o) => sum + (o.total_amount || 0), 0);
     const totalOrders = filtered.length;
+
+    const codOrders = filtered.filter(isCodOrder);
+    const prepaidOrders = filtered.filter(o => !isCodOrder(o));
+    const codSales = codOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+    const prepaidSales = prepaidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+    const prepaidPct = totalOrders ? Math.round((prepaidOrders.length / totalOrders) * 100) : 0;
 
     const content = document.getElementById('main-content');
     content.innerHTML = `
@@ -456,13 +471,27 @@ function renderDashboard() {
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon">${ICONS.shoppingCart}</div>
-                <div class="stat-label">Total Sales</div>
+                <div class="stat-label">Total Revenue</div>
                 <div class="stat-value">${formatCurrency(totalSales)}</div>
+                <div class="stat-subtext">${totalOrders} total confirmed orders</div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon">${ICONS.checkCircle}</div>
-                <div class="stat-label">Orders</div>
+                <div class="stat-icon" style="color:var(--success);background:rgba(76, 175, 80, 0.12);">${ICONS.checkCircle}</div>
+                <div class="stat-label">Prepaid Sales</div>
+                <div class="stat-value" style="color:var(--success);">${formatCurrency(prepaidSales)}</div>
+                <div class="stat-subtext">${prepaidOrders.length} orders (${prepaidPct}% online)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="color:#F59E0B;background:rgba(245, 158, 11, 0.12);">${ICONS.creditCard}</div>
+                <div class="stat-label">COD Sales</div>
+                <div class="stat-value" style="color:#F59E0B;">${formatCurrency(codSales)}</div>
+                <div class="stat-subtext">${codOrders.length} orders to collect at door</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">${ICONS.orders}</div>
+                <div class="stat-label">Total Volume</div>
                 <div class="stat-value">${totalOrders}</div>
+                <div class="stat-subtext">${filtered.filter(o => o.status === 'Placed').length} pending dispatch</div>
             </div>
         </div>
 
@@ -639,6 +668,15 @@ function renderOrders() {
         return;
     }
 
+    const prepaidCount = state.orders.filter(o => !isCodOrder(o)).length;
+    const codCount = state.orders.filter(isCodOrder).length;
+
+    const visibleOrders = state.orders.filter(order => {
+        if (state.orderPaymentFilter === 'prepaid') return !isCodOrder(order);
+        if (state.orderPaymentFilter === 'cod') return isCodOrder(order);
+        return true;
+    });
+
     content.innerHTML = `
         <div class="page-header">
             <h2>Live Orders</h2>
@@ -649,7 +687,19 @@ function renderOrders() {
             </div>
         </div>
 
-        ${state.orders.length ? `
+        <div class="orders-filter-bar">
+            <button class="orders-filter-btn ${state.orderPaymentFilter === 'all' ? 'active' : ''}" onclick="state.orderPaymentFilter='all';renderOrders()">
+                All Orders (${state.orders.length})
+            </button>
+            <button class="orders-filter-btn ${state.orderPaymentFilter === 'prepaid' ? 'active' : ''}" onclick="state.orderPaymentFilter='prepaid';renderOrders()">
+                Prepaid (${prepaidCount})
+            </button>
+            <button class="orders-filter-btn ${state.orderPaymentFilter === 'cod' ? 'active' : ''}" onclick="state.orderPaymentFilter='cod';renderOrders()">
+                Cash on Delivery (${codCount})
+            </button>
+        </div>
+
+        ${visibleOrders.length ? `
         <div class="orders-table-wrapper">
             <table class="orders-table">
                 <thead>
@@ -657,16 +707,24 @@ function renderOrders() {
                         <th>ID</th>
                         <th>Customer</th>
                         <th>User Type</th>
+                        <th>Payment</th>
                         <th>Total</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${state.orders.map(order => `
+                    ${visibleOrders.map(order => {
+                        const isCod = isCodOrder(order);
+                        return `
                         <tr onclick="openOrderDetail('${order.id}')">
                             <td class="order-id">#${(order.id || '').slice(-6)}</td>
                             <td>${escapeHtml(order.customer_name || '')}</td>
                             <td>${order.user_id ? '<span style="background:var(--success);color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Registered</span>' : '<span style="background:#aaa;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Guest</span>'}</td>
+                            <td>
+                                ${isCod 
+                                    ? '<span class="payment-badge cod" title="Cash on Delivery"><span class="payment-dot"></span>COD (+₹10)</span>' 
+                                    : '<span class="payment-badge prepaid" title="Prepaid Online via Razorpay"><span class="payment-dot"></span>Prepaid</span>'}
+                            </td>
                             <td class="order-amount">${formatCurrency(order.total_amount)}</td>
                             <td>
                                 <div class="status-dropdown" onclick="event.stopPropagation()">
@@ -682,14 +740,15 @@ function renderOrders() {
                                 </div>
                             </td>
                         </tr>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
         ` : `
         <div class="empty-state">
             ${ICONS.orders}
-            <p>No orders yet</p>
+            <p>${state.orderPaymentFilter === 'all' ? 'No orders yet' : 'No ' + state.orderPaymentFilter.toUpperCase() + ' orders found'}</p>
         </div>
         `}
     `;
@@ -708,6 +767,9 @@ function openOrderDetail(id) {
     const sc = statusClass(order.status);
     const statusColorMap = { placed: '#FFC107', shipped: '#42A5F5', delivered: '#4CAF50' };
     const statusColor = statusColorMap[sc] || '#AAA';
+
+    const isCod = isCodOrder(order);
+    const awb = order.bigship_awb || order.shiprocket_awb;
 
     let actionsHtml = '';
     if (order.status === 'Placed') {
@@ -745,6 +807,28 @@ function openOrderDetail(id) {
                 </div>
             </div>
 
+            <!-- Prominent Payment Verification Card -->
+            <div class="detail-payment-banner ${isCod ? 'cod' : 'prepaid'}">
+                <div class="detail-payment-banner-icon">
+                    ${isCod ? ICONS.creditCard : ICONS.checkCircle}
+                </div>
+                <div class="detail-payment-banner-body">
+                    <div class="detail-payment-badge-pill ${isCod ? 'cod' : 'prepaid'}">
+                        ${isCod ? 'CASH ON DELIVERY (COD)' : 'PREPAID ONLINE'}
+                    </div>
+                    <div class="detail-payment-banner-title">
+                        ${isCod 
+                            ? `Collect <strong>${formatCurrency(order.total_amount)}</strong> upon delivery`
+                            : `Paid in Full — <strong>${formatCurrency(order.total_amount)}</strong>`}
+                    </div>
+                    <div class="detail-payment-banner-sub">
+                        ${isCod 
+                            ? `Includes Rs. ${order.cod_fee || 10} COD convenience fee. Instruct courier partner to collect cash or UPI upon handover.`
+                            : `Online payment verified. Razorpay ID: <code>${escapeHtml(order.payment_id || order.paymentId || 'Verified')}</code>. Do NOT collect money.`}
+                    </div>
+                </div>
+            </div>
+
             <div class="detail-actions">${actionsHtml}</div>
 
             <div class="detail-info-card">
@@ -779,15 +863,24 @@ function openOrderDetail(id) {
                 <div class="detail-info-row">
                     <span class="info-icon">${ICONS.creditCard}</span>
                     <div>
-                        <div class="info-label">Payment</div>
-                        <div class="info-value">${escapeHtml(order.payment_method || 'Razorpay')} • ID: ${escapeHtml(order.payment_id || 'N/A')}</div>
+                        <div class="info-label">Payment Method</div>
+                        <div class="info-value" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem;">
+                            <span class="payment-badge ${isCod ? 'cod' : 'prepaid'}">
+                                <span class="payment-dot"></span>
+                                ${isCod ? 'Cash on Delivery (COD)' : 'Prepaid (Razorpay)'}
+                            </span>
+                            <span style="font-size:0.85rem;color:var(--text-secondary);">ID: ${escapeHtml(order.payment_id || order.paymentId || 'N/A')}</span>
+                        </div>
                     </div>
                 </div>
                 <div class="detail-info-row">
                     <span class="info-icon">${ICONS.truck}</span>
                     <div>
-                        <div class="info-label">Shiprocket AWB</div>
-                        <div class="info-value" style="font-weight:700">${escapeHtml(order.shiprocket_awb || 'N/A')}</div>
+                        <div class="info-label">Big Ship AWB</div>
+                        <div class="info-value" style="font-weight:700;display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+                            <span>${escapeHtml(awb || 'N/A')}</span>
+                            ${awb ? `<a href="https://bigship.in/tracking?awb=${encodeURIComponent(awb)}" target="_blank" rel="noopener noreferrer" class="awb-track-link">Track Package ↗</a>` : ''}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -795,8 +888,14 @@ function openOrderDetail(id) {
             <div class="detail-summary-card">
                 <div class="detail-summary-title">Order Summary</div>
                 <div class="detail-items-text">${itemsText}</div>
+                ${isCod ? `
+                <div class="detail-fee-row" style="display:flex;justify-content:space-between;padding:0.4rem 0;color:var(--text-secondary);font-size:0.85rem;border-top:1px dashed var(--divider);">
+                    <span>COD Convenience Fee</span>
+                    <span>Rs. ${Number(order.cod_fee || 10).toLocaleString('en-IN')}</span>
+                </div>
+                ` : ''}
                 <div class="detail-total-row">
-                    <span class="detail-total-label">Total Amount</span>
+                    <span class="detail-total-label">${isCod ? 'Total to Collect' : 'Total Paid'}</span>
                     <span class="detail-total-value">${formatCurrency(order.total_amount)}</span>
                 </div>
             </div>
