@@ -3,7 +3,7 @@
 // ============================================
 
 const API_BASE = 'https://restienestie.onrender.com';
-const POLL_INTERVAL = 10000; // 10 seconds
+const POLL_INTERVAL = 25000; // 25 seconds (gentle on server & prevents rate limiting)
 
 const SUPABASE_URL = 'https://julktcdhbnvxsjuqsimp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1bGt0Y2RoYm52eHNqdXFzaW1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MjUxOTAsImV4cCI6MjEwMjMwMTE5MH0.W6Jov4LGiSRnyOyG9h4xwYLHc6kZawR63EmyQd52Goo';
@@ -184,6 +184,9 @@ function navigate(tab) {
 async function fetchOrders() {
     try {
         const res = await fetch(`${API_BASE}/api/orders`);
+        if (!res.ok) {
+            console.warn(`Orders fetch HTTP status: ${res.status}`);
+        }
         const data = await res.json();
         if (data.success) {
             state.orders = data.orders || [];
