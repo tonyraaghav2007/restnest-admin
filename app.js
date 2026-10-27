@@ -724,7 +724,7 @@ function renderOrders() {
                             <td>${order.user_id ? '<span style="background:var(--success);color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Registered</span>' : '<span style="background:#aaa;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Guest</span>'}</td>
                             <td>
                                 ${isCod 
-                                    ? '<span class="payment-badge cod" title="Cash on Delivery"><span class="payment-dot"></span>COD (+₹10)</span>' 
+                                    ? `<span class="payment-badge cod" title="Cash on Delivery (${order.cod_fee ? 'Rs. ' + order.cod_fee : '2%'} fee)"><span class="payment-dot"></span>COD (+${order.cod_fee ? '₹' + order.cod_fee : '2%'})</span>` 
                                     : '<span class="payment-badge prepaid" title="Prepaid Online via Razorpay"><span class="payment-dot"></span>Prepaid</span>'}
                             </td>
                             <td class="order-amount">${formatCurrency(order.total_amount)}</td>
@@ -771,6 +771,7 @@ function openOrderDetail(id) {
     const statusColor = statusColorMap[sc] || '#AAA';
 
     const isCod = isCodOrder(order);
+    const codFee = isCod ? (order.cod_fee !== undefined && !isNaN(Number(order.cod_fee)) ? Number(order.cod_fee) : Math.round(Number(order.total_amount || 0) * 0.02)) : 0;
     const awb = order.bigship_awb || order.shiprocket_awb;
 
     let actionsHtml = '';
@@ -832,7 +833,7 @@ function openOrderDetail(id) {
                     </div>
                     <div class="detail-payment-banner-sub">
                         ${isCod 
-                            ? `Includes Rs. ${order.cod_fee || 10} COD convenience fee. Instruct courier partner to collect cash or UPI upon handover.`
+                            ? `Includes Rs. ${codFee} (2%) COD convenience fee. Instruct courier partner to collect cash or UPI upon handover.`
                             : `Online payment verified. Razorpay ID: <code>${escapeHtml(order.payment_id || order.paymentId || 'Verified')}</code>. Do NOT collect money.`}
                     </div>
                 </div>
@@ -899,8 +900,8 @@ function openOrderDetail(id) {
                 <div class="detail-items-text">${itemsText}</div>
                 ${isCod ? `
                 <div class="detail-fee-row" style="display:flex;justify-content:space-between;padding:0.4rem 0;color:var(--text-secondary);font-size:0.85rem;border-top:1px dashed var(--divider);">
-                    <span>COD Convenience Fee</span>
-                    <span>Rs. ${Number(order.cod_fee || 10).toLocaleString('en-IN')}</span>
+                    <span>COD Convenience Fee (2%)</span>
+                    <span>Rs. ${Number(codFee).toLocaleString('en-IN')}</span>
                 </div>
                 ` : ''}
                 <div class="detail-total-row">
