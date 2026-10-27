@@ -764,6 +764,36 @@ async function handleStatusChange(id, status) {
     renderOrders();
 }
 
+window.handleRetryBigship = async function(orderId) {
+    const btn = document.getElementById('retry-bigship-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="btn-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span> Syncing...`;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/retry-shipment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Success! Order synced with BigShip.\n\nAWB: ' + (data.data?.awb_code || 'Generated') + '\nShipment ID: ' + (data.data?.shipment_id || 'Assigned'));
+            await fetchOrders();
+            openOrderDetail(orderId);
+        } else {
+            alert('BigShip Sync Failed:\n\n' + (data.error || 'Failed to authenticate or create shipment on BigShip. Please check BigShip credentials.'));
+        }
+    } catch (err) {
+        alert('Network Error: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `${ICONS.truck} Push to BigShip`;
+        }
+    }
+};
+
 function openOrderDetail(id) {
     const order = state.orders.find(o => o.id === id);
     if (!order) return;
@@ -778,12 +808,17 @@ function openOrderDetail(id) {
     const awb = order.bigship_awb || order.shiprocket_awb;
 
     let actionsHtml = '';
+    const isBookedOnBigship = (order.bigship_status === 'Booked');
     if (order.status === 'Placed') {
         actionsHtml = `<button class="action-btn ship" onclick="handleDetailAction('${order.id}','Shipped')">${ICONS.send} Mark Shipped</button>`;
     } else if (order.status === 'Shipped') {
         actionsHtml = `<button class="action-btn deliver" onclick="handleDetailAction('${order.id}','Delivered')">${ICONS.checkCircle} Mark Delivered</button>`;
     } else if (order.status === 'Delivered') {
         actionsHtml = `<button class="action-btn delete" onclick="handleDetailDelete('${order.id}')">${ICONS.trash} Delete Order</button>`;
+    }
+
+    if (!isBookedOnBigship) {
+        actionsHtml += `<button id="retry-bigship-btn" class="action-btn" style="background:var(--primary);color:#fff;" onclick="handleRetryBigship('${order.id}')">${ICONS.truck} Push to BigShip</button>`;
     }
 
     // Parse items
@@ -842,7 +877,7 @@ function openOrderDetail(id) {
                 </div>
             </div>
 
-            <div class="detail-actions">${actionsHtml}</div>
+            <div class="detail-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;">${actionsHtml}</div>
 
             <div class="detail-info-card">
                 <div class="detail-info-row">
@@ -889,10 +924,13 @@ function openOrderDetail(id) {
                 <div class="detail-info-row">
                     <span class="info-icon">${ICONS.truck}</span>
                     <div>
-                        <div class="info-label">Big Ship AWB</div>
-                        <div class="info-value" style="font-weight:700;display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
-                            <span>${escapeHtml(awb || 'N/A')}</span>
-                            ${awb ? `<a href="https://bigship.in/tracking?awb=${encodeURIComponent(awb)}" target="_blank" rel="noopener noreferrer" class="awb-track-link">Track Package ↗</a>` : ''}
+                        <div class="info-label">Big Ship AWB & Portal Sync</div>
+                        <div class="info-value" style="font-weight:700;display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;flex-wrap:wrap;">
+                            <span>${escapeHtml(awb || 'Pending')}</span>
+                            ${order.bigship_status === 'Booked' 
+                                ? `<span style="background:rgba(40,167,69,0.15);color:#28a745;padding:2px 8px;border-radius:12px;font-size:0.75rem;">Synced with BigShip</span>` 
+                                : `<span style="background:rgba(220,53,69,0.15);color:#dc3545;padding:2px 8px;border-radius:12px;font-size:0.75rem;">${escapeHtml(order.bigship_error || 'Not synced')}</span>`}
+                            ${awb && awb !== 'Pending' ? `<a href="https://bigship.in/tracking?awb=${encodeURIComponent(awb)}" target="_blank" rel="noopener noreferrer" class="awb-track-link">Track Package ↗</a>` : ''}
                         </div>
                     </div>
                 </div>
