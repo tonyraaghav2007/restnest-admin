@@ -827,6 +827,15 @@ input, select, textarea { font-family: var(--font); }
     transition: all var(--transition);
 }
 
+.action-btn svg,
+.detail-actions .action-btn svg {
+    width: 18px !important;
+    height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    flex-shrink: 0;
+}
+
 .action-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px var(--shadow);

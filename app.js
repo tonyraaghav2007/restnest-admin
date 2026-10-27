@@ -528,15 +528,17 @@ function renderDashboardCharts() {
     const salesMap = {};
     filtered.forEach(order => {
         try {
-            const items = JSON.parse(order.items || '[]');
-            if (Array.isArray(items)) {
-                items.forEach(item => {
-                    const name = item.name || 'Unknown';
-                    const price = Number(item.price || 0);
-                    const qty = Number(item.quantity || 1);
-                    salesMap[name] = (salesMap[name] || 0) + (price * qty);
-                });
+            let items = order.items;
+            if (typeof items === 'string') {
+                try { items = JSON.parse(items); } catch (_) {}
             }
+            const list = Array.isArray(items) ? items : (items && typeof items === 'object' ? Object.values(items) : []);
+            list.forEach(item => {
+                const name = item.name || item.product_name || 'Unknown';
+                const price = Number(item.price || 0);
+                const qty = Number(item.quantity || 1);
+                salesMap[name] = (salesMap[name] || 0) + (price * qty);
+            });
         } catch (e) {
             // items might be a string description, skip
         }
@@ -783,12 +785,19 @@ function openOrderDetail(id) {
     // Parse items
     let itemsText = '';
     try {
-        const items = JSON.parse(order.items || '[]');
+        let items = order.items;
+        if (typeof items === 'string') {
+            try { items = JSON.parse(items); } catch (_) {}
+        }
         if (Array.isArray(items)) {
-            itemsText = items.map(i => `${i.name} × ${i.quantity} — Rs. ${Number(i.price * i.quantity).toLocaleString('en-IN')}`).join('<br>');
+            itemsText = items.map(i => `${escapeHtml(i.name || i.product_name || 'Item')} × ${i.quantity || 1} — Rs. ${Number((i.price || 0) * (i.quantity || 1)).toLocaleString('en-IN')}`).join('<br>');
+        } else if (items && typeof items === 'object') {
+            itemsText = Object.values(items).map(i => `${escapeHtml(i.name || i.product_name || 'Item')} × ${i.quantity || 1} — Rs. ${Number((i.price || 0) * (i.quantity || 1)).toLocaleString('en-IN')}`).join('<br>');
+        } else {
+            itemsText = escapeHtml(String(items || 'N/A'));
         }
     } catch (e) {
-        itemsText = order.items || 'N/A';
+        itemsText = 'N/A';
     }
 
     const overlay = document.getElementById('order-detail-overlay');
