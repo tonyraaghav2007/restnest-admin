@@ -21,6 +21,7 @@ let state = {
     pageTraffic: [],
     reviews: [],
     selectedOrder: null,
+    selectedOrderIds: new Set(),
     timeRange: 'All Time',
     orderPaymentFilter: 'all',
     isDark: true,
@@ -685,7 +686,10 @@ function renderOrders() {
     content.innerHTML = `
         <div class="page-header">
             <h2>Live Orders</h2>
-            <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;">
+            <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button id="push-selected-bigship-btn" class="action-btn" style="background:#059669;color:#fff;font-size:0.8rem;padding:6px 12px;display:${state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none'};align-items:center;gap:6px;" onclick="handlePushSelectedToBigship(event)" title="Push selected orders to BigShip Direct">
+                    ${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip
+                </button>
                 <button class="action-btn" style="background:#2563eb;color:#fff;font-size:0.8rem;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;" onclick="handlePushAllToBigship(event)" title="Push all unbooked orders to BigShip Direct">
                     ${ICONS.truck} Push All to BigShip
                 </button>
@@ -712,19 +716,29 @@ function renderOrders() {
             <table class="orders-table">
                 <thead>
                     <tr>
+                        <th style="width:38px;text-align:center;">
+                            <input type="checkbox" class="order-checkbox" id="select-all-orders" onchange="toggleSelectAllOrders(this.checked)" ${visibleOrders.length > 0 && visibleOrders.every(o => state.selectedOrderIds.has(o.id)) ? 'checked' : ''} title="Select All">
+                        </th>
                         <th>ID</th>
                         <th>Customer</th>
                         <th>User Type</th>
                         <th>Payment</th>
                         <th>Total</th>
+                        <th>BigShip</th>
                         <th>Status</th>
+                        <th style="text-align:right;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${visibleOrders.map(order => {
                         const isCod = isCodOrder(order);
+                        const isBooked = order.bigship_status === 'Booked';
+                        const isFailed = order.bigship_status === 'Failed';
                         return `
                         <tr onclick="openOrderDetail('${order.id}')">
+                            <td style="text-align:center;" onclick="event.stopPropagation()">
+                                <input type="checkbox" class="order-checkbox" onchange="toggleSelectOrder('${order.id}', this.checked)" ${state.selectedOrderIds.has(order.id) ? 'checked' : ''}>
+                            </td>
                             <td class="order-id">#${(order.id || '').slice(-6)}</td>
                             <td>${escapeHtml(order.customer_name || '')}</td>
                             <td>${order.user_id ? '<span style="background:var(--success);color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Registered</span>' : '<span style="background:#aaa;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;">Guest</span>'}</td>
@@ -734,6 +748,13 @@ function renderOrders() {
                                     : '<span class="payment-badge prepaid" title="Prepaid Online via Razorpay"><span class="payment-dot"></span>Prepaid</span>'}
                             </td>
                             <td class="order-amount">${formatCurrency(order.total_amount)}</td>
+                            <td>
+                                ${isBooked
+                                    ? `<span class="bigship-badge booked" title="Shipment ID: ${order.bigship_shipment_id || 'Booked'} | AWB: ${order.bigship_awb || 'Assigned on Dispatch'}"><span class="bigship-dot green"></span>Booked ${order.bigship_shipment_id ? '(#' + order.bigship_shipment_id + ')' : ''}</span>`
+                                    : isFailed
+                                        ? `<span class="bigship-badge failed" title="${escapeHtml(order.bigship_error || 'Booking error')}"><span class="bigship-dot red"></span>Failed</span>`
+                                        : `<span class="bigship-badge pending"><span class="bigship-dot yellow"></span>Unbooked</span>`}
+                            </td>
                             <td>
                                 <div class="status-dropdown" onclick="event.stopPropagation()">
                                     <span class="status-badge ${statusClass(order.status)}" onclick="this.nextElementSibling.classList.toggle('open')">
@@ -746,6 +767,11 @@ function renderOrders() {
                                         `).join('')}
                                     </div>
                                 </div>
+                            </td>
+                            <td style="text-align:right;" onclick="event.stopPropagation()">
+                                <button class="row-action-btn ${isBooked ? 'booked' : ''}" onclick="handleSinglePush('${order.id}')" title="${isBooked ? 'Re-sync with BigShip' : 'Push to BigShip'}">
+                                    ${ICONS.truck} ${isBooked ? 'Re-sync' : 'Push'}
+                                </button>
                             </td>
                         </tr>
                     `;
@@ -762,10 +788,51 @@ function renderOrders() {
     `;
 }
 
-async function handleStatusChange(id, status) {
-    await updateOrderStatus(id, status);
-    renderOrders();
+function getVisibleOrders() {
+    return state.orders.filter(order => {
+        if (state.orderPaymentFilter === 'prepaid') return !isCodOrder(order);
+        if (state.orderPaymentFilter === 'cod') return isCodOrder(order);
+        return true;
+    });
 }
+
+window.toggleSelectOrder = function(id, isChecked) {
+    if (isChecked) {
+        state.selectedOrderIds.add(id);
+    } else {
+        state.selectedOrderIds.delete(id);
+    }
+    const btn = document.getElementById('push-selected-bigship-btn');
+    if (btn) {
+        btn.style.display = state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none';
+        btn.innerHTML = `${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip`;
+    }
+    const selectAll = document.getElementById('select-all-orders');
+    if (selectAll) {
+        const visible = getVisibleOrders();
+        selectAll.checked = visible.length > 0 && visible.every(o => state.selectedOrderIds.has(o.id));
+    }
+};
+
+window.toggleSelectAllOrders = function(isChecked) {
+    const visible = getVisibleOrders();
+    if (isChecked) {
+        visible.forEach(o => state.selectedOrderIds.add(o.id));
+    } else {
+        visible.forEach(o => state.selectedOrderIds.delete(o.id));
+    }
+    renderOrders();
+};
+
+window.handleSinglePush = async function(orderId) {
+    const order = state.orders.find(o => o.id === orderId);
+    if (order && order.bigship_status === 'Booked') {
+        if (!confirm(`Order #${(orderId || '').slice(-6)} is already booked on BigShip (Shipment ID: ${order.bigship_shipment_id || 'Active'}).\n\nDo you want to re-push / re-sync this order to BigShip?`)) {
+            return;
+        }
+    }
+    await handleRetryBigship(orderId);
+};
 
 window.handleRetryBigship = async function(orderId) {
     const btn = document.getElementById('retry-bigship-btn');
@@ -782,9 +849,13 @@ window.handleRetryBigship = async function(orderId) {
         const data = await res.json();
         if (data.success) {
             const shipmentId = data.shipment_id || data.data?.CustomGlobalOrderId || data.data?.shipment_id || 'Booked';
-            alert('Success! Order booked on BigShip Direct.\n\nShipment ID: ' + shipmentId + '\nStatus: Visible on BigShip Dashboard');
+            alert('Success! Order booked on BigShip Direct.\n\nShipment ID: ' + shipmentId + '\nStatus: Synced on BigShip Dashboard');
             await fetchOrders();
-            openOrderDetail(orderId);
+            if (state.selectedOrder && state.selectedOrder.id === orderId) {
+                openOrderDetail(orderId);
+            } else {
+                renderOrders();
+            }
         } else {
             alert('BigShip Sync Failed:\n\n' + (data.error || 'Failed to authenticate or create shipment on BigShip. Please check BigShip credentials.'));
         }
@@ -798,8 +869,55 @@ window.handleRetryBigship = async function(orderId) {
     }
 };
 
+window.handlePushSelectedToBigship = async function(e) {
+    const selected = Array.from(state.selectedOrderIds);
+    if (!selected.length) {
+        alert('Please select at least one order using the checkboxes.');
+        return;
+    }
+    if (!confirm(`Push ${selected.length} selected order(s) to BigShip Direct?`)) return;
+    const btn = e ? e.currentTarget : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="btn-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span> Syncing (${selected.length})...`;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/push-selected-to-bigship`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderIds: selected })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`BigShip Push Complete!\n\nSuccessfully Booked: ${data.results.successCount}\nFailed: ${data.results.failureCount}\nTotal Selected: ${data.results.total}`);
+            state.selectedOrderIds.clear();
+            await fetchOrders();
+            renderOrders();
+        } else {
+            alert('Push failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error pushing selected orders to BigShip: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip`;
+        }
+    }
+};
+
 window.handlePushAllToBigship = async function(e) {
-    if (!confirm('Sync all pending / unbooked orders to BigShip Direct now?')) return;
+    const unbookedCount = state.orders.filter(o => o.bigship_status !== 'Booked').length;
+    let force = false;
+
+    if (unbookedCount === 0) {
+        const forceConfirm = confirm(`All ${state.orders.length} orders are already booked on BigShip Direct!\n\nEvery order already has an active BigShip shipment ID.\n\nWould you like to FORCE re-push all orders anyway?`);
+        if (!forceConfirm) return;
+        force = true;
+    } else {
+        if (!confirm(`Sync ${unbookedCount} unbooked order(s) to BigShip Direct now?`)) return;
+    }
+
     const btn = e ? e.currentTarget : null;
     if (btn) {
         btn.disabled = true;
@@ -808,11 +926,16 @@ window.handlePushAllToBigship = async function(e) {
     try {
         const res = await fetch(`${API_BASE}/api/push-all-unbooked-to-bigship`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force })
         });
         const data = await res.json();
         if (data.success) {
-            alert(`BigShip Sync Complete!\n\nSuccessfully Booked: ${data.results.successCount}\nFailed: ${data.results.failureCount}\nTotal Checked: ${data.results.total}`);
+            if (data.results.total === 0) {
+                alert('All orders are already booked on BigShip Direct!\n\nAll ' + state.orders.length + ' orders have confirmed BigShip shipments.');
+            } else {
+                alert(`BigShip Sync Complete!\n\nSuccessfully Booked: ${data.results.successCount}\nFailed: ${data.results.failureCount}\nTotal Processed: ${data.results.total}`);
+            }
             await fetchOrders();
             renderOrders();
         } else {
@@ -851,9 +974,7 @@ function openOrderDetail(id) {
         actionsHtml = `<button class="action-btn delete" onclick="handleDetailDelete('${order.id}')">${ICONS.trash} Delete Order</button>`;
     }
 
-    if (!isBookedOnBigship) {
-        actionsHtml += `<button id="retry-bigship-btn" class="action-btn" style="background:var(--primary);color:#fff;" onclick="handleRetryBigship('${order.id}')">${ICONS.truck} Push to BigShip</button>`;
-    }
+    actionsHtml += `<button id="retry-bigship-btn" class="action-btn" style="background:${isBookedOnBigship ? '#2563eb' : 'var(--primary)'};color:#fff;" onclick="handleSinglePush('${order.id}')">${ICONS.truck} ${isBookedOnBigship ? 'Re-sync to BigShip' : 'Push to BigShip'}</button>`;
 
     // Parse items
     let itemsText = '';
@@ -960,11 +1081,11 @@ function openOrderDetail(id) {
                     <div>
                         <div class="info-label">Big Ship AWB & Portal Sync</div>
                         <div class="info-value" style="font-weight:700;display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;flex-wrap:wrap;">
-                            <span>${escapeHtml(awb || 'Pending')}</span>
+                            <span>${order.bigship_shipment_id ? `Shipment #${escapeHtml(order.bigship_shipment_id)}` : escapeHtml(awb || 'Pending')}</span>
                             ${order.bigship_status === 'Booked' 
                                 ? `<span style="background:rgba(40,167,69,0.15);color:#28a745;padding:2px 8px;border-radius:12px;font-size:0.75rem;">Synced with BigShip</span>` 
                                 : `<span style="background:rgba(220,53,69,0.15);color:#dc3545;padding:2px 8px;border-radius:12px;font-size:0.75rem;">${escapeHtml(order.bigship_error || 'Not synced')}</span>`}
-                            ${awb && awb !== 'Pending' ? `<a href="https://bigship.in/tracking?awb=${encodeURIComponent(awb)}" target="_blank" rel="noopener noreferrer" class="awb-track-link">Track Package ↗</a>` : ''}
+                            ${awb && awb !== 'Pending' && awb !== 'Assigned on Dispatch' ? `<a href="https://bigship.in/tracking?awb=${encodeURIComponent(awb)}" target="_blank" rel="noopener noreferrer" class="awb-track-link">Track Package ↗</a>` : ''}
                         </div>
                     </div>
                 </div>
