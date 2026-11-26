@@ -732,8 +732,9 @@ function renderOrders() {
                 <tbody>
                     ${visibleOrders.map(order => {
                         const isCod = isCodOrder(order);
-                        const isBooked = order.bigship_status === 'Booked';
-                        const isFailed = order.bigship_status === 'Failed';
+                        const hasShipmentId = Boolean(order.bigship_shipment_id && order.bigship_shipment_id !== 'Pending' && order.bigship_shipment_id !== 'N/A');
+                        const isBooked = order.bigship_status === 'Booked' || hasShipmentId;
+                        const isFailed = !isBooked && (order.bigship_status === 'Failed' || Boolean(order.bigship_error));
                         return `
                         <tr onclick="openOrderDetail('${order.id}')">
                             <td style="text-align:center;" onclick="event.stopPropagation()">
@@ -826,10 +827,10 @@ window.toggleSelectAllOrders = function(isChecked) {
 
 window.handleSinglePush = async function(orderId) {
     const order = state.orders.find(o => o.id === orderId);
-    if (order && order.bigship_status === 'Booked') {
-        if (!confirm(`Order #${(orderId || '').slice(-6)} is already booked on BigShip (Shipment ID: ${order.bigship_shipment_id || 'Active'}).\n\nDo you want to re-push / re-sync this order to BigShip?`)) {
-            return;
-        }
+    const hasShipment = order && (order.bigship_status === 'Booked' || (order.bigship_shipment_id && order.bigship_shipment_id !== 'Pending' && order.bigship_shipment_id !== 'N/A'));
+    if (hasShipment) {
+        alert(`Order #${(orderId || '').slice(-6)} is confirmed and booked on BigShip Direct!\n\nShipment ID: ${order.bigship_shipment_id || 'Booked'}\nAWB: ${order.bigship_awb || 'Assigned on Dispatch'}\nStatus: Synced on BigShip Dashboard`);
+        return;
     }
     await handleRetryBigship(orderId);
 };
@@ -907,16 +908,14 @@ window.handlePushSelectedToBigship = async function(e) {
 };
 
 window.handlePushAllToBigship = async function(e) {
-    const unbookedCount = state.orders.filter(o => o.bigship_status !== 'Booked').length;
-    let force = false;
+    const unbookedCount = state.orders.filter(o => !(o.bigship_status === 'Booked' || (o.bigship_shipment_id && o.bigship_shipment_id !== 'Pending' && o.bigship_shipment_id !== 'N/A'))).length;
 
     if (unbookedCount === 0) {
-        const forceConfirm = confirm(`All ${state.orders.length} orders are already booked on BigShip Direct!\n\nEvery order already has an active BigShip shipment ID.\n\nWould you like to FORCE re-push all orders anyway?`);
-        if (!forceConfirm) return;
-        force = true;
-    } else {
-        if (!confirm(`Sync ${unbookedCount} unbooked order(s) to BigShip Direct now?`)) return;
+        alert(`All ${state.orders.length} orders are already confirmed and booked on BigShip Direct!\n\nEvery order has an active BigShip shipment ID.`);
+        return;
     }
+
+    if (!confirm(`Sync ${unbookedCount} unbooked order(s) to BigShip Direct now?`)) return;
 
     const btn = e ? e.currentTarget : null;
     if (btn) {
@@ -927,7 +926,7 @@ window.handlePushAllToBigship = async function(e) {
         const res = await fetch(`${API_BASE}/api/push-all-unbooked-to-bigship`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ force })
+            body: JSON.stringify({ force: false })
         });
         const data = await res.json();
         if (data.success) {
@@ -965,7 +964,7 @@ function openOrderDetail(id) {
     const awb = order.bigship_awb || order.shiprocket_awb;
 
     let actionsHtml = '';
-    const isBookedOnBigship = (order.bigship_status === 'Booked');
+    const isBookedOnBigship = (order.bigship_status === 'Booked') || Boolean(order.bigship_shipment_id && order.bigship_shipment_id !== 'Pending' && order.bigship_shipment_id !== 'N/A');
     if (order.status === 'Placed') {
         actionsHtml = `<button class="action-btn ship" onclick="handleDetailAction('${order.id}','Shipped')">${ICONS.send} Mark Shipped</button>`;
     } else if (order.status === 'Shipped') {
