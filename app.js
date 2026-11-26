@@ -22,6 +22,8 @@ let state = {
     reviews: [],
     selectedOrder: null,
     selectedOrderIds: new Set(),
+    selectedBulkOrderIds: new Set(),
+    bulkStatusFilter: 'all',
     timeRange: 'All Time',
     orderPaymentFilter: 'all',
     isDark: true,
@@ -287,8 +289,95 @@ async function deleteOrder(id) {
     try {
         await fetch(`${API_BASE}/api/delete-order/${id}`, { method: 'DELETE' });
         state.orders = state.orders.filter(o => o.id !== id);
+        state.selectedOrderIds.delete(id);
     } catch (err) {
         console.error('Failed to delete order:', err);
+    }
+}
+
+async function deleteOrdersBatch(ids) {
+    try {
+        const res = await fetch(`${API_BASE}/api/delete-orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const data = await res.json();
+        if (data.success) {
+            state.orders = state.orders.filter(o => !ids.includes(o.id));
+            ids.forEach(id => state.selectedOrderIds.delete(id));
+            return true;
+        } else {
+            alert('Failed to delete orders: ' + (data.error || 'Unknown error'));
+            return false;
+        }
+    } catch (err) {
+        console.error('Failed to delete orders batch:', err);
+        alert('Network error deleting orders: ' + err.message);
+        return false;
+    }
+}
+
+async function updateBulkOrderStatus(id, status) {
+    try {
+        const res = await fetch(`${API_BASE}/api/bulk-orders/${encodeURIComponent(id)}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        const data = await res.json();
+        if (data.success) {
+            const order = state.bulkOrders.find(o => o.id === id);
+            if (order) order.status = status;
+        } else {
+            console.error('Failed to update bulk order status:', data.message);
+            alert('Could not update status: ' + (data.message || 'Error'));
+        }
+    } catch (err) {
+        console.error('Failed to update bulk status:', err);
+        alert('Network error updating status: ' + err.message);
+    }
+}
+
+async function deleteBulkOrder(id) {
+    try {
+        const res = await fetch(`${API_BASE}/api/bulk-orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            state.bulkOrders = state.bulkOrders.filter(o => o.id !== id);
+            state.selectedBulkOrderIds.delete(id);
+            return true;
+        } else {
+            alert('Failed to delete bulk request: ' + (data.message || data.error));
+            return false;
+        }
+    } catch (err) {
+        console.error('Failed to delete bulk order:', err);
+        alert('Network error deleting bulk request: ' + err.message);
+        return false;
+    }
+}
+
+async function deleteBulkOrdersBatch(ids) {
+    try {
+        const res = await fetch(`${API_BASE}/api/delete-bulk-orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const data = await res.json();
+        if (data.success) {
+            state.bulkOrders = state.bulkOrders.filter(o => !ids.includes(o.id));
+            ids.forEach(id => state.selectedBulkOrderIds.delete(id));
+            return true;
+        } else {
+            alert('Failed to delete bulk requests: ' + (data.error || 'Unknown error'));
+            return false;
+        }
+    } catch (err) {
+        console.error('Failed to delete bulk orders batch:', err);
+        alert('Network error deleting bulk requests: ' + err.message);
+        return false;
     }
 }
 
@@ -687,6 +776,9 @@ function renderOrders() {
         <div class="page-header">
             <h2>Live Orders</h2>
             <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button id="delete-selected-orders-btn" class="action-btn" style="background:#ef4444;color:#fff;font-size:0.8rem;padding:6px 12px;display:${state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none'};align-items:center;gap:6px;" onclick="handleDeleteSelectedOrders(event)" title="Delete selected orders">
+                    ${ICONS.trash} Delete Selected (${state.selectedOrderIds.size})
+                </button>
                 <button id="push-selected-bigship-btn" class="action-btn" style="background:#059669;color:#fff;font-size:0.8rem;padding:6px 12px;display:${state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none'};align-items:center;gap:6px;" onclick="handlePushSelectedToBigship(event)" title="Push selected orders to BigShip Direct">
                     ${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip
                 </button>
@@ -763,7 +855,7 @@ function renderOrders() {
                                         <span class="badge-arrow">▼</span>
                                     </span>
                                     <div class="status-dropdown-menu">
-                                        ${['Placed', 'Shipped', 'Delivered'].map(s => `
+                                        ${['Placed', 'Shipped', 'Delivered', 'Pending', 'Called', 'Fraud'].map(s => `
                                             <button onclick="handleStatusChange('${order.id}','${s}');this.closest('.status-dropdown-menu').classList.remove('open')">${s}</button>
                                         `).join('')}
                                     </div>
@@ -803,15 +895,49 @@ window.toggleSelectOrder = function(id, isChecked) {
     } else {
         state.selectedOrderIds.delete(id);
     }
-    const btn = document.getElementById('push-selected-bigship-btn');
-    if (btn) {
-        btn.style.display = state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none';
-        btn.innerHTML = `${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip`;
+    const pushBtn = document.getElementById('push-selected-bigship-btn');
+    if (pushBtn) {
+        pushBtn.style.display = state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none';
+        pushBtn.innerHTML = `${ICONS.truck} Push Selected (${state.selectedOrderIds.size}) to BigShip`;
+    }
+    const delBtn = document.getElementById('delete-selected-orders-btn');
+    if (delBtn) {
+        delBtn.style.display = state.selectedOrderIds.size > 0 ? 'inline-flex' : 'none';
+        delBtn.innerHTML = `${ICONS.trash} Delete Selected (${state.selectedOrderIds.size})`;
     }
     const selectAll = document.getElementById('select-all-orders');
     if (selectAll) {
         const visible = getVisibleOrders();
         selectAll.checked = visible.length > 0 && visible.every(o => state.selectedOrderIds.has(o.id));
+    }
+};
+
+window.handleStatusChange = async function(id, status) {
+    await updateOrderStatus(id, status);
+    renderOrders();
+};
+
+window.handleDeleteSelectedOrders = async function(e) {
+    const selected = Array.from(state.selectedOrderIds);
+    if (!selected.length) {
+        alert('Please select at least one order to delete.');
+        return;
+    }
+    if (!confirm(`Are you sure you want to permanently delete ${selected.length} selected order(s)? This cannot be undone.`)) {
+        return;
+    }
+    const btn = e ? e.currentTarget : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="btn-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span> Deleting (${selected.length})...`;
+    }
+    const success = await deleteOrdersBatch(selected);
+    if (success) {
+        renderOrders();
+    }
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `${ICONS.trash} Delete Selected (${state.selectedOrderIds.size})`;
     }
 };
 
@@ -1225,26 +1351,89 @@ function renderCustomers() {
 }
 
 // ══════════════════════ BULK ORDERS ══════════════════════
+function getVisibleBulkOrders() {
+    return state.bulkOrders.filter(order => {
+        if (!state.bulkStatusFilter || state.bulkStatusFilter === 'all') return true;
+        const s = (order.status || 'Pending').toLowerCase();
+        return s === state.bulkStatusFilter.toLowerCase();
+    });
+}
+
 function renderBulk() {
     const content = document.getElementById('main-content');
+
+    const pendingCount = state.bulkOrders.filter(o => (o.status || 'Pending').toLowerCase() === 'pending').length;
+    const calledCount = state.bulkOrders.filter(o => (o.status || '').toLowerCase() === 'called').length;
+    const fraudCount = state.bulkOrders.filter(o => (o.status || '').toLowerCase() === 'fraud').length;
+
+    const visibleBulk = getVisibleBulkOrders();
 
     content.innerHTML = `
         <div class="page-header">
             <h2>Bulk Requests</h2>
-            <div class="page-header-actions">
+            <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button id="delete-selected-bulk-btn" class="action-btn" style="background:#ef4444;color:#fff;font-size:0.8rem;padding:6px 12px;display:${state.selectedBulkOrderIds.size > 0 ? 'inline-flex' : 'none'};align-items:center;gap:6px;" onclick="handleDeleteSelectedBulkOrders(event)" title="Delete selected bulk requests">
+                    ${ICONS.trash} Delete Selected (${state.selectedBulkOrderIds.size})
+                </button>
                 <button class="btn-icon" onclick="fetchBulkOrders().then(()=>renderBulk())" title="Refresh">
                     ${ICONS.refresh}
                 </button>
             </div>
         </div>
 
-        ${state.bulkOrders.length ? `
+        <div class="orders-filter-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button class="orders-filter-btn ${state.bulkStatusFilter === 'all' ? 'active' : ''}" onclick="state.bulkStatusFilter='all';renderBulk()">
+                    All (${state.bulkOrders.length})
+                </button>
+                <button class="orders-filter-btn ${state.bulkStatusFilter === 'pending' ? 'active' : ''}" onclick="state.bulkStatusFilter='pending';renderBulk()">
+                    Pending (${pendingCount})
+                </button>
+                <button class="orders-filter-btn ${state.bulkStatusFilter === 'called' ? 'active' : ''}" onclick="state.bulkStatusFilter='called';renderBulk()">
+                    Called (${calledCount})
+                </button>
+                <button class="orders-filter-btn ${state.bulkStatusFilter === 'fraud' ? 'active' : ''}" onclick="state.bulkStatusFilter='fraud';renderBulk()">
+                    Fraud (${fraudCount})
+                </button>
+            </div>
+            ${visibleBulk.length ? `
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-secondary);">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input type="checkbox" id="select-all-bulk" class="order-checkbox" onchange="toggleSelectAllBulkOrders(this.checked)" ${visibleBulk.length > 0 && visibleBulk.every(b => state.selectedBulkOrderIds.has(b.id)) ? 'checked' : ''}>
+                    <span>Select All (${visibleBulk.length})</span>
+                </label>
+            </div>
+            ` : ''}
+        </div>
+
+        ${visibleBulk.length ? `
         <div class="bulk-grid">
-            ${state.bulkOrders.map(order => `
-                <div class="bulk-card">
+            ${visibleBulk.map(order => {
+                const isSelected = state.selectedBulkOrderIds.has(order.id);
+                const currentStatus = order.status || 'Pending';
+                return `
+                <div class="bulk-card ${isSelected ? 'selected' : ''}" id="bulk-card-${order.id}">
                     <div class="bulk-card-header">
-                        <span class="bulk-card-id">${escapeHtml(order.id || '')}</span>
-                        <span class="status-badge ${order.status === 'Pending' ? 'placed' : 'delivered'}">${order.status || 'Pending'}</span>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <input type="checkbox" class="order-checkbox" onchange="toggleSelectBulkOrder('${order.id}', this.checked)" ${isSelected ? 'checked' : ''}>
+                            <span class="bulk-card-id">${escapeHtml(order.id || '')}</span>
+                        </div>
+                        <div class="bulk-card-actions">
+                            <div class="status-dropdown">
+                                <span class="status-badge ${statusClass(currentStatus)}" onclick="this.nextElementSibling.classList.toggle('open')">
+                                    ${currentStatus}
+                                    <span class="badge-arrow">▼</span>
+                                </span>
+                                <div class="status-dropdown-menu align-right">
+                                    ${['Pending', 'Called', 'Fraud'].map(s => `
+                                        <button onclick="handleBulkStatusChange('${order.id}','${s}');this.closest('.status-dropdown-menu').classList.remove('open')">${s}</button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <button class="bulk-card-delete-btn" onclick="handleDeleteBulkOrder('${order.id}')" title="Delete Bulk Request">
+                                ${ICONS.trash}
+                            </button>
+                        </div>
                     </div>
                     <div class="bulk-card-business">${escapeHtml(order.business_name || 'N/A')}</div>
                     <span class="bulk-card-qty">Qty: ${order.quantity || 0}</span>
@@ -1252,18 +1441,94 @@ function renderBulk() {
                         <span>👤 ${escapeHtml((order.first_name || '') + ' ' + (order.last_name || ''))}</span>
                         <span>📧 ${escapeHtml(order.email || '')}</span>
                         <span>📞 ${escapeHtml(order.phone || '')}</span>
+                        <span>📍 ${escapeHtml(order.city ? (order.city + (order.state ? ', ' + order.state : '')) : (order.address || 'N/A'))}</span>
                     </div>
+                    ${order.notes ? `
+                    <div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px dashed var(--border-color);font-size:0.8rem;color:var(--text-secondary);">
+                        <strong>Notes:</strong> ${escapeHtml(order.notes)}
+                    </div>
+                    ` : ''}
                 </div>
-            `).join('')}
+            `;
+            }).join('')}
         </div>
         ` : `
         <div class="empty-state">
             ${ICONS.bulk}
-            <p>No bulk requests yet</p>
+            <p>${state.bulkStatusFilter === 'all' ? 'No bulk requests yet' : 'No ' + state.bulkStatusFilter.toUpperCase() + ' bulk requests found'}</p>
         </div>
         `}
     `;
 }
+
+window.toggleSelectBulkOrder = function(id, isChecked) {
+    if (isChecked) {
+        state.selectedBulkOrderIds.add(id);
+    } else {
+        state.selectedBulkOrderIds.delete(id);
+    }
+    const card = document.getElementById(`bulk-card-${id}`);
+    if (card) {
+        card.classList.toggle('selected', isChecked);
+    }
+    const btn = document.getElementById('delete-selected-bulk-btn');
+    if (btn) {
+        btn.style.display = state.selectedBulkOrderIds.size > 0 ? 'inline-flex' : 'none';
+        btn.innerHTML = `${ICONS.trash} Delete Selected (${state.selectedBulkOrderIds.size})`;
+    }
+    const selectAll = document.getElementById('select-all-bulk');
+    if (selectAll) {
+        const visible = getVisibleBulkOrders();
+        selectAll.checked = visible.length > 0 && visible.every(b => state.selectedBulkOrderIds.has(b.id));
+    }
+};
+
+window.toggleSelectAllBulkOrders = function(isChecked) {
+    const visible = getVisibleBulkOrders();
+    if (isChecked) {
+        visible.forEach(b => state.selectedBulkOrderIds.add(b.id));
+    } else {
+        visible.forEach(b => state.selectedBulkOrderIds.delete(b.id));
+    }
+    renderBulk();
+};
+
+window.handleBulkStatusChange = async function(id, status) {
+    await updateBulkOrderStatus(id, status);
+    renderBulk();
+};
+
+window.handleDeleteBulkOrder = async function(id) {
+    if (!confirm('Are you sure you want to delete this bulk request?')) return;
+    const success = await deleteBulkOrder(id);
+    if (success) {
+        renderBulk();
+    }
+};
+
+window.handleDeleteSelectedBulkOrders = async function(e) {
+    const selected = Array.from(state.selectedBulkOrderIds);
+    if (!selected.length) {
+        alert('Please select at least one bulk request to delete.');
+        return;
+    }
+    if (!confirm(`Are you sure you want to permanently delete ${selected.length} selected bulk request(s)? This cannot be undone.`)) {
+        return;
+    }
+    const btn = e ? e.currentTarget : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="btn-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span> Deleting (${selected.length})...`;
+    }
+    const success = await deleteBulkOrdersBatch(selected);
+    if (success) {
+        renderBulk();
+    }
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `${ICONS.trash} Delete Selected (${state.selectedBulkOrderIds.size})`;
+    }
+};
 
 // ══════════════════════ CONTACT MESSAGES ══════════════════════
 function renderContactMessages() {
